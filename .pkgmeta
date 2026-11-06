@@ -9,4 +9,5 @@ ignore:
   - CHANGELOG.md
   - .gitignore
   - .github
+  - docs
   - "*.zip"

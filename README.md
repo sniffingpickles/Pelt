@@ -4,6 +4,8 @@
 
 You kill a boar, loot it, and run off to the next one. Pelt notices the corpse turned skinnable, reminds you, nags if you walk away, and ticks it off when you skin it.
 
+![Pelt's settings window](docs/settings.png)
+
 ## What it does
 
 - **Spots skinnable corpses.** When a corpse you killed turns skinnable, a card slides in: what it is, the skill it needs and yours. Pelt reads the corpse's tooltip and the cursor it shows, so the skinning knife is enough.

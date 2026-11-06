@@ -7,7 +7,7 @@
 local ADDON, P = ...
 
 local GetMeta = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
-P.version = GetMeta and GetMeta(ADDON, "Version") or "1.0.0"
+P.version = GetMeta and GetMeta(ADDON, "Version") or "1.1.0"
 
 local build = select(4, GetBuildInfo())
 P.IS_FOREVER = (build >= 16000 and build < 20000)
