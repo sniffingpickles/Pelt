@@ -36,6 +36,16 @@ function C.Knows(id)
     return false
 end
 
+-- Length of the spell you're casting, in seconds.
+function C.CastDuration()
+    if not UnitCastingInfo then return nil end
+    local _, _, _, startMS, endMS = UnitCastingInfo("player")
+    startMS, endMS = C.Readable(startMS), C.Readable(endMS)
+    if type(startMS) == "number" and type(endMS) == "number" and endMS > startMS then
+        return (endMS - startMS) / 1000
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Units
 ---------------------------------------------------------------------------
@@ -133,6 +143,74 @@ function C.UnitGatherLine(unit, match)
         return C.GatherFromData(data, match)
     end
     return ScanTooltip(unit, match)
+end
+
+---------------------------------------------------------------------------
+-- Cursor
+---------------------------------------------------------------------------
+
+-- The cursor a unit shows under the mouse: the skinning knife, the pick,
+-- the herb hand. "Unable" is the greyed-out one (too far, or skill too low).
+local CURSORS = {
+    { file = "Skin", prof = "skinning" },
+    { file = "UnableSkin", prof = "skinning", unable = true },
+    { file = "GatherHerbs", prof = "herbalism" },
+    { file = "UnableGatherHerbs", prof = "herbalism", unable = true },
+    { file = "Mine", prof = "mining" },
+    { file = "UnableMine", prof = "mining", unable = true },
+    { file = "EngineerSkin", prof = "engineering" },
+    { file = "UnableEngineerSkin", prof = "engineering", unable = true },
+    { file = "LootAll" },
+    { file = "UnableLootAll", unable = true },
+    { file = "Pickup" },
+    { file = "UnablePickup", unable = true },
+}
+
+local cursorTex, cursorByID, cursorByName
+
+local function BuildCursors()
+    local holder = CreateFrame("Frame", nil, UIParent)
+    holder:Hide()
+    cursorTex = holder:CreateTexture()
+    cursorByID, cursorByName = {}, {}
+    for _, c in ipairs(CURSORS) do
+        cursorByName[c.file:lower()] = c
+        -- the client may hand back a file ID instead of a path
+        local ref = holder:CreateTexture()
+        ref:SetTexture("Interface\\Cursor\\" .. c.file)
+        local id = ref.GetTextureFileID and C.Readable(ref:GetTextureFileID())
+        if type(id) == "number" and id > 0 then cursorByID[id] = c end
+    end
+end
+
+local function CursorFrom(v)
+    if type(v) == "number" then return cursorByID[v] end
+    if type(v) == "string" then
+        local name = (v:lower():match("([^\\/]+)$") or ""):gsub("%.%w+$", "")
+        return cursorByName[name]
+    end
+end
+
+-- Which cursor `unit` shows. Returns the cursor (a CURSORS entry), false
+-- when it has none, or nil when the client won't say. The second value is
+-- what the client handed back, for /pelt check.
+function C.UnitCursor(unit)
+    if not SetUnitCursorTexture then return nil end
+    if not cursorTex then BuildCursors() end
+    cursorTex:SetTexture(nil)
+    local ok, has = pcall(SetUnitCursorTexture, cursorTex, unit)
+    if not ok then return nil end
+    has = C.Readable(has)
+    if has == nil then return nil end
+    if not has then return false end
+    local raw
+    for _, get in ipairs({ "GetTextureFileID", "GetTextureFilePath", "GetTexture", "GetAtlas" }) do
+        local v = cursorTex[get] and C.Readable(cursorTex[get](cursorTex))
+        local c = CursorFrom(v)
+        if c then return c, v end
+        raw = raw or v
+    end
+    return nil, raw
 end
 
 ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 --[[
     Pelt - widgets
-    Buttons, switches, sliders and pickers for the settings window.
+    Buttons, switches, sliders and profession tiles for the settings window.
 ]]
 
 local _, P = ...
@@ -71,6 +71,7 @@ local function Row(parent, label, desc, height)
     end)
     return row
 end
+UI.Row = Row
 
 -- Pill switch. get() -> bool, set(bool).
 function UI:Switch(parent, label, desc, get, set)
@@ -156,48 +157,6 @@ function UI:Slider(parent, label, desc, min, max, step, get, set, fmt)
         s:SetValue(get())
         Paint(get())
     end
-    row:Update()
-    return row
-end
-
--- Click to step through `values` ({ key, label } tables); right-click goes back.
-function UI:Picker(parent, label, desc, values, get, set, onPick)
-    local row = Row(parent, label, desc)
-    local b = CreateFrame("Button", nil, row)
-    b:SetSize(124, 24)
-    b:SetPoint("RIGHT")
-    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    UI:Surface(b, { radius = 6, color = "surface2", border = "border" })
-    b.hover = UI:Fill(b, 6, { 1, 1, 1, 0.06 }, "HIGHLIGHT")
-    b.hover:SetAllPoints()
-    b.text = UI:Text(b, { size = 11 })
-    b.text:SetPoint("LEFT", 10, 0)
-    b.chev = b:CreateTexture(nil, "ARTWORK")
-    b.chev:SetTexture(UI.tex.chevron)
-    b.chev:SetSize(12, 12)
-    b.chev:SetPoint("RIGHT", -6, 0)
-    b.chev:SetVertexColor(UI:Color("textDim"))
-
-    function row:Update()
-        for _, v in ipairs(values) do
-            if v.key == get() then b.text:SetText(v.label) return end
-        end
-        b.text:SetText(values[1].label)
-    end
-    b:SetScript("OnClick", function(_, button)
-        local index = 1
-        for i, v in ipairs(values) do
-            if v.key == get() then index = i end
-        end
-        index = index + (button == "RightButton" and -1 or 1)
-        if index > #values then index = 1 elseif index < 1 then index = #values end
-        set(values[index].key)
-        row:Update()
-        if onPick then onPick(values[index].key) end
-    end)
-    b:SetScript("OnEnter", function() row:GetScript("OnEnter")(row) end)
-    b:SetScript("OnLeave", function() row:GetScript("OnLeave")(row) end)
-    row:SetScript("OnClick", function() b:Click() end)
     row:Update()
     return row
 end

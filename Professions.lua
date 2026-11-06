@@ -17,24 +17,28 @@ Profs.info = {
         name = "Skinning", skillLine = 393, line = "UNIT_SKINNABLE_LEATHER", english = "Skinnable",
         spells = { 8613, 8617, 8618, 10768, 32678, 50305 },
         verb = "Skin it", done = "Skinned", nag = "Skin the %s!",
+        hover = "Right-click to skin", casting = "Skinning",
         icon = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01", color = "skinning",
     },
     herbalism = {
         name = "Herbalism", skillLine = 182, line = "UNIT_SKINNABLE_HERB", english = "Requires Herbalism",
         spells = { 2366, 2368, 3570, 11993, 28695, 50300 },
         verb = "Gather it", done = "Gathered", nag = "Gather from the %s!",
+        hover = "Right-click to gather", casting = "Gathering",
         icon = "Interface\\Icons\\Spell_Nature_NatureTouchGrow", color = "herbalism",
     },
     mining = {
         name = "Mining", skillLine = 186, line = "UNIT_SKINNABLE_ROCK", english = "Requires Mining",
         spells = { 2575, 2576, 3564, 10248, 29354, 50310 },
         verb = "Mine it", done = "Mined", nag = "Mine the %s!",
+        hover = "Right-click to mine", casting = "Mining",
         icon = "Interface\\Icons\\Trade_Mining", color = "mining",
     },
     engineering = {
         name = "Engineering", skillLine = 202, line = "UNIT_SKINNABLE_BOLTS", english = "Requires Engineering",
         spells = { 4036, 4037, 4038, 12656, 30350, 51306 },
         verb = "Salvage it", done = "Salvaged", nag = "Salvage the %s!",
+        hover = "Right-click to salvage", casting = "Salvaging",
         icon = "Interface\\Icons\\Trade_Engineering", color = "engineering",
     },
 }

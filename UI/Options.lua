@@ -23,9 +23,11 @@ local function Setting(key)
 end
 
 local function SoundValues()
-    local list = {}
-    for _, s in ipairs(P.SOUNDS) do list[#list + 1] = { key = s.key, label = s.label } end
-    return list
+    return P:SoundList()
+end
+
+local function Preview(key)
+    P:PlaySound(key)
 end
 
 local function StatsText()
@@ -128,14 +130,17 @@ local function Build()
         "Shake the card and play a sound when you move off without skinning.", get, set), 34)
     get, set = Setting("bigText")
     right:Add(UI:Switch(window, "Big text with the nag", "Also flash \"Skin the ...!\" in the middle of the screen.", get, set), 34)
-    local sounds = SoundValues()
-    local preview = function(key) P:PlaySound(key) end
+    local sounds = { preview = Preview }
+    Options.dropdowns = {}
     get, set = Setting("sound")
-    right:Add(UI:Picker(window, "Sound: skinnable", "Plays when a corpse you can skin shows up.", sounds, get, set, preview), 34)
+    Options.dropdowns.sound = right:Add(UI:Dropdown(window, "Skinnable sound",
+        "Plays when a corpse you can skin shows up.", SoundValues, get, set, sounds), 34)
     get, set = Setting("nagSound")
-    right:Add(UI:Picker(window, "Sound: walking away", "Plays with the nag.", sounds, get, set, preview), 34)
+    Options.dropdowns.nagSound = right:Add(UI:Dropdown(window, "Walk-away sound",
+        "Plays with the nag.", SoundValues, get, set, sounds), 34)
     get, set = Setting("doneSound")
-    right:Add(UI:Picker(window, "Sound: skinned", "Plays when you skin it.", sounds, get, set, preview), 34, 6)
+    Options.dropdowns.doneSound = right:Add(UI:Dropdown(window, "Skinned sound",
+        "Plays when you skin it.", SoundValues, get, set, sounds), 34, 6)
 
     right:Add(UI:Header(window, "Display"), 26, 2)
     get, set = Setting("tooltip")
@@ -166,6 +171,7 @@ local function Build()
     test:SetScript("OnClick", function() P.Toast:Demo() end)
 
     window:SetScript("OnShow", function() Options:Update() end)
+    window:SetScript("OnHide", function() UI:CloseMenu() end)
 end
 
 StaticPopupDialogs.PELT_RESET_STATS = {

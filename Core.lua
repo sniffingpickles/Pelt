@@ -21,33 +21,13 @@ P.defaults = {
     remindFor = 60,         -- seconds out of combat before a corpse counts as missed
     nag = true,             -- shake, sound and big text when you walk away
     bigText = true,
-    sound = "ping",         -- keys of P.SOUNDS
+    sound = "ping",         -- keys from P:SoundList() (Sounds.lua)
     nagSound = "warning",
     doneSound = "coins",
     tooltip = true,         -- skill needed vs yours on corpse tooltips
     scale = 1,
     position = { "BOTTOM", 0, 230 },
 }
-
-P.SOUNDS = {
-    { key = "none",    label = "None" },
-    { key = "ping",    label = "Ping",         kit = "MAP_PING",                     id = 3175 },
-    { key = "chime",   label = "Chime",        kit = "IG_QUEST_LIST_COMPLETE",       id = 878 },
-    { key = "coins",   label = "Coins",        kit = "LOOT_WINDOW_COIN_SOUND",       id = 120 },
-    { key = "chain",   label = "Chain",        kit = "PUT_DOWN_SMALL_CHAIN",         id = 1212 },
-    { key = "whisper", label = "Boss whisper", kit = "UI_RAID_BOSS_WHISPER_WARNING", id = 37666 },
-    { key = "alarm",   label = "Alarm",        kit = "ALARM_CLOCK_WARNING_3",        id = 12889 },
-    { key = "warning", label = "Raid warning", kit = "RAID_WARNING",                 id = 8959 },
-}
-
-function P:PlaySound(key)
-    for _, s in ipairs(self.SOUNDS) do
-        if s.key == key and s.id then
-            PlaySound(SOUNDKIT and SOUNDKIT[s.kit] or s.id, "Master")
-            return
-        end
-    end
-end
 
 ---------------------------------------------------------------------------
 -- Events
@@ -106,7 +86,7 @@ local function CopyDefaults(src, dst)
 end
 
 local function NewStats()
-    return { skinned = 0, missed = 0, items = 0, streak = 0, best = 0 }
+    return { skinned = 0, missed = 0, items = 0, streak = 0, best = 0, skillups = 0 }
 end
 
 local function InitDB()
@@ -167,6 +147,13 @@ function P:CountMissed()
     self:Send("STATS")
 end
 
+function P:CountSkillUp(n)
+    for _, s in ipairs({ self.stats, self.session }) do
+        s.skillups = s.skillups + n
+    end
+    self:Send("STATS")
+end
+
 ---------------------------------------------------------------------------
 -- Chat and slash commands
 ---------------------------------------------------------------------------
@@ -177,8 +164,10 @@ end
 
 function P:PrintStats()
     local s, ses = self.stats, self.session
-    self:Print(("This session: %d skinned, %d missed, %d items."):format(ses.skinned, ses.missed, ses.items))
-    self:Print(("This character: %d skinned, %d missed, best streak %d."):format(s.skinned, s.missed, s.best))
+    self:Print(("This session: %d skinned, %d missed, %d items, %d skill-ups."):format(
+        ses.skinned, ses.missed, ses.items, ses.skillups))
+    self:Print(("This character: %d skinned, %d missed, best streak %d, %d skill-ups."):format(
+        s.skinned, s.missed, s.best, s.skillups))
 end
 
 local HELP = {
@@ -186,6 +175,7 @@ local HELP = {
     "/pelt test - preview the reminder",
     "/pelt move - move the reminder (again to lock)",
     "/pelt stats - what you've skinned and missed",
+    "/pelt check - what Pelt can see on your target",
 }
 
 SLASH_PELT1 = "/pelt"
@@ -197,6 +187,8 @@ SlashCmdList.PELT = function(msg)
         P.Toast:ToggleMover()
     elseif msg == "stats" then
         P:PrintStats()
+    elseif msg == "check" then
+        P.Tracker:Diagnose()
     elseif msg == "help" or msg == "?" then
         for _, line in ipairs(HELP) do P:Print(line) end
     else

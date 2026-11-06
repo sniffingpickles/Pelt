@@ -25,6 +25,8 @@ UI.tex = {
     check = MEDIA .. "Check",
     close = MEDIA .. "Close",
     chevron = MEDIA .. "Chevron",
+    chevronDown = MEDIA .. "ChevronDown",
+    play = MEDIA .. "Play",
     logo = MEDIA .. "Logo",
     glyph = MEDIA .. "PeltGlyph",
 }

@@ -12,6 +12,7 @@ local T = { corpses = {}, pending = {} }
 P.Tracker = T
 
 local TOKENS = { "target", "mouseover", "softinteract" }
+local POINTED = { "mouseover", "softinteract" }
 local CONFIRM_FOR = 4       -- seconds after looting to keep looking for the "Skinnable" line
 local TRUST_LEARNED = 0.8   -- then fall back on what this NPC was last time
 local CAST_WINDOW = 1       -- a loot window this soon after a gathering cast is its loot
@@ -62,6 +63,16 @@ local function RemovePending(c)
     end
 end
 
+-- The profession a corpse can be gathered with: its tooltip line first, then
+-- the cursor it shows. false when neither shows one, nil when hidden.
+local function GatherKey(unit)
+    local key = C.UnitGatherLine(unit, Profs.match)
+    if key then return key end
+    local cursor = C.UnitCursor(unit)
+    if cursor and cursor.prof then return cursor.prof end
+    return key
+end
+
 ---------------------------------------------------------------------------
 -- State changes
 ---------------------------------------------------------------------------
@@ -84,6 +95,7 @@ function T:Promote(c, key)
     RemovePending(c)
     c.state = "pending"
     c.age, c.moved, c.nagged = 0, 0, false
+    c.rankAt = rank
     table.insert(self.pending, 1, c)
     P.Toast:Push(c)
     self:Wake()
@@ -94,6 +106,8 @@ function T:Resolve(c, how, items)
     RemovePending(c)
     c.state = how
     c.resolvedAt = now()
+    c.casting = nil
+    if self.hover == c then self.hover, self.hoverUnit = nil, nil end
     if how == "done" then
         P:CountDone(items, c.countedMiss)
         c.countedMiss = nil
@@ -124,7 +138,7 @@ function T:Scan(unit, fresh)
     local guid = C.GUID(unit)
     local npc = C.NpcID(guid)
     if not npc then return end
-    local key = C.UnitGatherLine(unit, Profs.match)
+    local key = GatherKey(unit)
     if key == nil then return end
     local c = self.corpses[guid]
     if key then
@@ -148,6 +162,30 @@ end
 
 function T:ScanAll()
     for _, unit in ipairs(TOKENS) do self:Scan(unit) end
+    self:UpdateHover()
+end
+
+-- The waiting corpse under your mouse (it shows the skinning cursor), or the
+-- one soft targeting has picked out. It takes the card while you point at it.
+function T:UpdateHover()
+    local hover, unit
+    if not P.inCombat then
+        for _, u in ipairs(POINTED) do
+            local guid = C.ValidToken(u) and UnitExists(u) and C.GUID(u)
+            local c = guid and self.corpses[guid]
+            if c and c.state == "pending" then hover, unit = c, u break end
+        end
+    end
+    if hover == self.hover and unit == self.hoverUnit then return end
+    self.hover, self.hoverUnit = hover, unit
+    if hover then
+        hover.moved = 0
+        if self.pending[1] ~= hover then
+            RemovePending(hover)
+            table.insert(self.pending, 1, hover)
+        end
+    end
+    P.Toast:Refresh()
 end
 
 ---------------------------------------------------------------------------
@@ -222,6 +260,48 @@ function T:OnCast(spellID)
         self.lastCast = now()
         self.lastGather = self.lastCast
         self.lastCastKey = key
+        for _, c in ipairs(self.pending) do
+            if c.casting then c.casting.done = true end
+        end
+    end
+end
+
+-- Started skinning: the card fills up with the cast.
+function T:OnCastStart(spellID)
+    spellID = C.Readable(spellID)
+    local key = spellID and Profs:FromCast(spellID)
+    local c = key and (self.hover or PendingInView())
+    if not c then return end
+    c.casting = { at = now(), dur = C.CastDuration() or 2 }
+    c.moved = 0
+    c.rankAt = Profs:Rank(c.prof)
+    P.Toast:Refresh()
+end
+
+function T:OnCastFailed(spellID)
+    spellID = C.Readable(spellID)
+    if not (spellID and Profs:FromCast(spellID)) then return end
+    for _, c in ipairs(self.pending) do
+        if c.casting and not c.casting.done then c.casting = nil end
+    end
+    P.Toast:Refresh()
+end
+
+-- Skill went up: credit the corpse you just skinned. The rank is re-read
+-- half a second after the game says so.
+function T:OnSkills()
+    local t = now()
+    for _, c in pairs(self.corpses) do
+        local rank = c.prof and Profs:Rank(c.prof)
+        if rank and c.rankAt and rank > c.rankAt then
+            if c.state == "done" and not c.gain and t - c.resolvedAt < 8 then
+                c.gain, c.rankNow = rank - c.rankAt, rank
+                P:CountSkillUp(c.gain)
+                P.Toast:SkillUp(c)
+            elseif c.state == "pending" then
+                c.rankAt = rank
+            end
+        end
     end
 end
 
@@ -260,19 +340,27 @@ function T:OnUpdate(dt)
     if not P.inCombat and #self.pending > 0 then
         for i = #self.pending, 1, -1 do
             local c = self.pending[i]
-            c.age = c.age + dt
+            -- a cast that never got its loot: let the card go back
+            if c.casting and t - c.casting.at > c.casting.dur + 1.5 then
+                c.casting = nil
+                P.Toast:Refresh()
+            end
+            -- no ticking down while you're skinning it
+            if not c.casting then c.age = c.age + dt end
             if c.age >= P.db.remindFor then self:Resolve(c, "missed") end
         end
         local top = self.pending[1]
         if top and P.db.nag and not top.nagged then
             local onTarget = C.GUID("target") == top.guid
             local near = onTarget and C.InReach("target")
-            if near then
+            -- pointing at it from across the field is still walking away
+            local onIt = top.casting or (self.hover == top and C.InReach(self.hoverUnit) ~= false)
+            if near or onIt then
                 top.moved = 0
             elseif C.IsMoving() then
                 top.moved = top.moved + dt
             end
-            if top.age >= NAG_GRACE and (top.moved >= WALK_AWAY or (onTarget and near == false)) then
+            if not onIt and top.age >= NAG_GRACE and (top.moved >= WALK_AWAY or (onTarget and near == false)) then
                 top.nagged = true
                 P.Toast:Nag(top)
             end
@@ -308,17 +396,31 @@ P:Listen("READY", function()
     P:On("LOOT_SLOT_CLEARED", function() if loot then loot.cleared = loot.cleared + 1 end end)
     P:On("LOOT_CLOSED", function() T:OnLootClosed() end)
 
-    P:On("UPDATE_MOUSEOVER_UNIT", function() T:Scan("mouseover", true) end)
+    local function Pointed(unit)
+        T:Scan(unit, true)
+        T:UpdateHover()
+    end
+    P:On("UPDATE_MOUSEOVER_UNIT", function() Pointed("mouseover") end)
+    -- the mouse moved onto or off something in the world
+    P:On("WORLD_CURSOR_TOOLTIP_UPDATE", function() Pointed("mouseover") end)
+    P:On("PLAYER_SOFT_INTERACT_CHANGED", function() Pointed("softinteract") end)
     P:On("PLAYER_TARGET_CHANGED", function() T:Scan("target", true) end)
-    P:On("PLAYER_SOFT_INTERACT_CHANGED", function() T:Scan("softinteract", true) end)
     -- fires when the corpse's skinnable flag lands
     P:On("UNIT_FLAGS", function(unit)
         if unit == "target" or unit == "mouseover" then T:Scan(unit) end
     end)
 
+    P:On("UNIT_SPELLCAST_START", function(unit, _, spellID)
+        if unit == "player" then T:OnCastStart(spellID) end
+    end)
     P:On("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
         if unit == "player" then T:OnCast(spellID) end
     end)
+    for _, event in ipairs({ "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED" }) do
+        P:On(event, function(unit, _, spellID)
+            if unit == "player" then T:OnCastFailed(spellID) end
+        end)
+    end
 
     P:On("PLAYER_REGEN_DISABLED", function()
         P.inCombat = true
@@ -343,3 +445,65 @@ P:Listen("SETTINGS", function()
         for i = #T.pending, 1, -1 do T:Resolve(T.pending[i], "dismissed") end
     end
 end)
+
+P:Listen("SKILLS", function() T:OnSkills() end)
+
+---------------------------------------------------------------------------
+-- /pelt check: what Pelt can read off your target
+---------------------------------------------------------------------------
+
+local function YesNo(v)
+    if v == nil then return "can't tell" end
+    return v and "yes" or "no"
+end
+
+local STATE_TEXT = {
+    new = "seen it",
+    looted = "you looted it, waiting for it to turn skinnable",
+    pending = "reminding you",
+    done = "skinned",
+    missed = "missed",
+    gone = "gone (someone else skinned it, or it despawned)",
+    dismissed = "skipped",
+    low = "your skill is too low (turn on the low-skill reminder to see it)",
+    ignored = "that profession is off, or you don't have it",
+}
+
+function T:Diagnose()
+    local unit
+    for _, u in ipairs(TOKENS) do
+        if C.ValidToken(u) and UnitExists(u) then unit = u break end
+    end
+    if not unit then
+        P:Print("Target a corpse or point at one, then type /pelt check.")
+        return
+    end
+    local dead = C.Readable(UnitIsDead(unit))
+    P:Print(("%s (%s): %s"):format(C.Readable(UnitName(unit)) or "Hidden name", unit,
+        dead == nil and "can't tell if it's dead" or dead and "dead" or "alive"))
+    if P.inCombat then P:Print("  You're in combat, so most of this is hidden until it ends.") end
+
+    local line = C.UnitGatherLine(unit, Profs.match)
+    P:Print("  Tooltip line: " .. (line and Profs.info[line].name or line == false and "none" or "hidden"))
+
+    local cursor, raw = C.UnitCursor(unit)
+    local shows
+    if cursor then
+        shows = cursor.file
+    elseif cursor == false then
+        shows = "none"
+    elseif raw ~= nil then
+        shows = "not one Pelt knows (" .. tostring(raw) .. ")"
+    else
+        shows = SetUnitCursorTexture and "hidden" or "not on this client"
+    end
+    P:Print("  Cursor: " .. shows)
+    P:Print("  Someone else's kill: " .. YesNo(C.Readable(UnitIsTapDenied(unit))))
+    P:Print("  In reach: " .. YesNo(C.InReach(unit)))
+
+    local guid = C.GUID(unit)
+    local c = guid and self.corpses[guid]
+    local learned = P.learned[C.NpcID(guid) or false]
+    P:Print("  Pelt: " .. (c and STATE_TEXT[c.state] or "not tracking it")
+        .. (learned and ("  ·  learned as " .. Profs.info[learned].name) or ""))
+end

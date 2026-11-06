@@ -203,15 +203,22 @@ function Toast:PaintPending(c)
     card.tick:Hide()
     card.title:SetText(c.name or "Corpse")
     card.title:SetTextColor(UI:Color("text"))
+    -- "mouseover" or "softinteract" while you point at this corpse
+    local pointed = not P.inCombat and P.Tracker.hover == c and P.Tracker.hoverUnit
     if P.inCombat then
         card.eyebrow:SetText("AFTER THE FIGHT")
         card.eyebrow:SetTextColor(UI:Color("textDim"))
+    elseif c.casting then
+        card.eyebrow:SetText(info.casting:upper())
+    elseif pointed then
+        card.eyebrow:SetText((pointed == "softinteract" and "In reach" or info.hover):upper())
     elseif c.nagged then
         card.eyebrow:SetText("DON'T FORGET IT")
         card.eyebrow:SetTextColor(UI:Color("warn"))
     else
         card.eyebrow:SetText(info.verb:upper())
     end
+    self:SetGlow(pointed and 0.35 or 0)
     card.meta:SetText(SkillText(c))
     local extra = #P.Tracker.pending - 1
     card.badge:SetShown(extra > 0)
@@ -227,6 +234,7 @@ function Toast:PaintResolved(c, how, items)
     card.fill:Hide()
     card.icon.icon:SetTexture(info.icon)
     card.title:SetText(c.name or "Corpse")
+    self:SetGlow(0)
     if how == "done" then
         SetAccent("good")
         card.tick:Show()
@@ -234,10 +242,15 @@ function Toast:PaintResolved(c, how, items)
         card.tick.mark:SetVertexColor(0.05, 0.05, 0.05)
         card.eyebrow:SetText(info.done:upper())
         card.title:SetTextColor(UI:Color("text"))
-        local streak = P.stats.streak
-        local loot = ItemsText(items)
-        local tail = streak >= 3 and UI:Colorize("good", ("streak %d"):format(streak)) or nil
-        card.meta:SetText(loot and tail and (loot .. "  ·  " .. tail) or loot or tail or "")
+        local parts = {}
+        if c.gain then
+            parts[1] = UI:Colorize("good", ("%s %d  +%d"):format(Profs:Name(c.prof or "skinning"), c.rankNow, c.gain))
+        end
+        parts[#parts + 1] = ItemsText(items)
+        if P.stats.streak >= 3 then
+            parts[#parts + 1] = UI:Colorize("good", ("streak %d"):format(P.stats.streak))
+        end
+        card.meta:SetText(table.concat(parts, "  ·  "))
     else
         SetAccent("danger")
         card.tick:Hide()
@@ -280,9 +293,19 @@ function Toast:SlideOut(done)
     end, function()
         card:Hide()
         UI:SetSurface(card, "bg")
+        UI:StopTween("pelt.glow")
         card.glow:SetAlpha(0)
+        Toast.glowTo = 0
         if done then done() end
     end)
+end
+
+-- A steady halo while you point at the corpse.
+function Toast:SetGlow(to)
+    if self.glowTo == to then return end
+    self.glowTo = to
+    local from = card.glow:GetAlpha()
+    UI:Tween("pelt.glow", 0.25, function(e) card.glow:SetAlpha(from + (to - from) * e) end)
 end
 
 function Toast:Shake()
@@ -291,7 +314,7 @@ function Toast:Shake()
     end, nil, function(p) return p end)
     UI:Tween("pelt.glow", 1.6, function(_, p)
         card.glow:SetAlpha(math.sin(p * math.pi * 3) ^ 2 * (1 - p * 0.6))
-    end, function() card.glow:SetAlpha(0) end, function(p) return p end)
+    end, function() card.glow:SetAlpha(Toast.glowTo or 0) end, function(p) return p end)
 end
 
 function Toast:Pop()
@@ -356,10 +379,19 @@ function Toast:Resolve(c, how, items)
         return
     end
     self.shown = nil
-    self.resolving = { c = c, how = how, untilT = GetTime() + hold }
+    self.resolving = { c = c, how = how, items = items, untilT = GetTime() + hold }
     self:PaintResolved(c, how, items)
     if how == "done" then self:Pop() end
     if not card:IsShown() or card:GetAlpha() < 1 then self:SlideIn() end
+end
+
+-- The skill-up lands a moment after the tick: add it to the card.
+function Toast:SkillUp(c)
+    local r = self.resolving
+    if r and r.c == c and r.how == "done" then
+        self:PaintResolved(c, "done", r.items)
+        r.untilT = math.max(r.untilT, GetTime() + 1.2)
+    end
 end
 
 -- Show whatever should be showing now.
@@ -395,6 +427,13 @@ function Toast:OnUpdate()
     end
     local c = self.shown
     if not c or not c.age then return end
+    local cast = c.casting
+    if cast then
+        -- fills up with your skinning cast
+        local p = cast.done and 1 or math.min(1, (GetTime() - cast.at) / cast.dur)
+        card.fill:SetWidth(math.max(1, (W - 28) * p))
+        return
+    end
     local left = math.max(0, 1 - c.age / math.max(1, P.db.remindFor))
     card.fill:SetWidth(math.max(1, (W - 28) * left))
 end
@@ -414,12 +453,17 @@ function Toast:Demo()
     P:PlaySound(P.db.sound)
     UI:Tween("pelt.demo", 7, function(_, p)
         if self.demo ~= c then return end
-        c.age = p * P.db.remindFor
+        if not c.casting then c.age = p * P.db.remindFor end
         if p > 0.38 and not c.nagged then
             c.nagged = true
             self:Nag(c)
+        elseif p > 0.56 and not c.casting then
+            c.casting = { at = GetTime(), dur = 7 * 0.15 }
+            self:PaintPending(c)
         elseif p > 0.72 and not c.done then
             c.done = true
+            local rank = Profs:Rank("skinning")
+            if rank then c.gain, c.rankNow = 1, rank + 1 end
             P:PlaySound(P.db.doneSound)
             self:PaintResolved(c, "done", { { name = "Ruined Leather Scraps", count = 2 } })
             self:Pop()
