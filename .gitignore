@@ -1,0 +1,10 @@
+# Local dev tooling: mock client, reference data, scripts
+.claude/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+.idea/

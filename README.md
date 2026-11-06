@@ -1,0 +1,50 @@
+# Pelt
+
+**Never walk away from a corpse you could skin.** For WoW Forever, and Burning Crusade Anniversary.
+
+You kill a boar, loot it, and run off to the next one. Pelt notices the corpse turned skinnable, reminds you, nags if you walk away, and ticks it off when you skin it.
+
+## What it does
+
+- **Spots skinnable corpses.** When a corpse you killed turns skinnable, a card slides in: what it is, the skill it needs and yours.
+- **Catches the ones that dropped nothing.** No loot sparkle, no right-click, easy to forget. Pelt picks them up once the fight ends.
+- **Nags when you walk off.** Move away without skinning and the card shakes, a sound plays and "Skin the Mottled Boar!" flashes on screen.
+- **Ticks it off.** Skin it and the card turns green, showing what you got and your streak.
+- **Counts the misses.** If a corpse sits too long, it counts as missed. Mouse over it again and it comes back.
+- **Learns as you go.** Once Pelt has seen a creature's corpse turn skinnable, it reminds you about that creature even if you never look at the corpse again.
+- **Tooltip hint.** Under the game's "Skinnable" line: the skill it needs and yours, green or red.
+- **Not just skinning.** Corpses you gather with Herbalism, Mining or Engineering on Burning Crusade Anniversary work the same way.
+
+It stays quiet when it should:
+- In a fight, the card waits ("After the fight"), and time in combat doesn't count toward a miss.
+- Other people's kills, professions you don't have, and corpses your skill is too low for are skipped. You can turn on reminders for those.
+
+## Commands
+
+| Command | |
+|---|---|
+| `/pelt` | Settings |
+| `/pelt test` | Preview the card, the nag and the tick |
+| `/pelt move` | Drag the card somewhere else (again to lock) |
+| `/pelt stats` | What you've skinned and missed |
+
+The settings are also under Esc → Options → AddOns → Pelt, and in the addon compartment on the minimap.
+
+## Settings
+
+- **Reminders:** on or off, only corpses you looted, corpses your skill is too low for, and how long until a corpse counts as missed (15–120 seconds).
+- **Professions:** pick which of Skinning, Herbalism, Mining and Engineering to remind you about.
+- **Alerts:** the walk-away nag, the big text, and a sound for each moment.
+- **Display:** the tooltip hint and the card size.
+
+## WoW Forever notes
+
+Forever doesn't give addons the combat log, and in combat it hides other units' names and IDs. Pelt works from what's left: your loot windows, the corpse's own tooltip and your skinning casts. Anything it can't read in a fight, it reads the moment combat ends.
+
+## Install
+
+Extract the `Pelt` folder into your AddOns folder, for example `World of Warcraft\_forever_\Interface\AddOns`, then restart the game.
+
+---
+
+**Author:** muggles · **Twitch:** [twitch.tv/muggles](https://twitch.tv/muggles)
