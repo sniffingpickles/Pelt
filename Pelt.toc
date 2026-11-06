@@ -3,6 +3,7 @@
 ## Notes: Never walk away from a corpse you could skin. Pelt spots skinnable corpses, reminds you, nags if you wander off and ticks them off when you skin them. Works for Herbalism, Mining and Engineering corpses too.
 ## Author: muggles
 ## Version: 1.1.0
+## X-Curse-Project-ID: 1786740
 ## SavedVariables: PeltDB
 ## OptionalDeps: LibSharedMedia-3.0, SharedMedia, EllesmereUI
 ## IconTexture: Interface\AddOns\Pelt\Media\Logo
