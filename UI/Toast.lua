@@ -216,7 +216,8 @@ function Toast:PaintPending(c)
         card.eyebrow:SetText("DON'T FORGET IT")
         card.eyebrow:SetTextColor(UI:Color("warn"))
     else
-        card.eyebrow:SetText(info.verb:upper())
+        -- someone else killed it, but it's yours to skin
+        card.eyebrow:SetText((c.theirs and "Up for grabs" or info.verb):upper())
     end
     self:SetGlow(pointed and 0.35 or 0)
     card.meta:SetText(SkillText(c))

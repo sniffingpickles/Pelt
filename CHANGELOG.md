@@ -6,6 +6,7 @@
 - Skill-ups show on the "Skinned" card, and `/pelt stats` counts them.
 - Sound pickers are now dropdowns, with a play button next to each one and on every sound in the list.
 - More sounds: six made for Pelt, 28 from the game, plus EllesmereUI's sounds and any SharedMedia sound packs you have.
+- Other people's kills remind you too when you point at or target them, as "Up for grabs". Anyone can skin a looted corpse. Passing one up doesn't count as a miss, and a new setting turns them off.
 - `/pelt check` shows what Pelt can read off your target, to help when a corpse isn't picked up.
 
 # Pelt 1.0.0

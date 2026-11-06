@@ -17,6 +17,7 @@ P.defaults = {
     enabled = true,
     profs = { skinning = true, herbalism = true, mining = true, engineering = true },
     onlyMine = false,       -- only corpses you looted yourself
+    others = true,          -- other people's skinnable kills you point at or target
     lowSkill = false,       -- also remind when your skill is too low to skin it
     remindFor = 60,         -- seconds out of combat before a corpse counts as missed
     nag = true,             -- shake, sound and big text when you walk away

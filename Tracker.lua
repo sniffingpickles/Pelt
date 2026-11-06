@@ -113,11 +113,12 @@ function T:Resolve(c, how, items)
         c.countedMiss = nil
         -- you're busy skinning: walking to the next corpse isn't walking away
         for _, other in ipairs(self.pending) do other.moved = 0 end
-    elseif how == "missed" and not c.countedMiss then
+    elseif how == "missed" and not c.countedMiss and not c.theirs then
         c.countedMiss = true
         P:CountMissed()
     end
-    P.Toast:Resolve(c, how, items)
+    -- passing up someone else's kill isn't a miss: it just leaves quietly
+    P.Toast:Resolve(c, (how == "missed" and c.theirs) and "gone" or how, items)
 end
 
 function T:Dismiss(c)
@@ -144,10 +145,12 @@ function T:Scan(unit, fresh)
     if key then
         Learn(npc, key)
         if not c then
-            -- not one you looted: skip other people's kills, and all of them
-            -- when you only want your own
-            if P.db.onlyMine or C.Readable(UnitIsTapDenied(unit)) ~= false then return end
+            -- Not one you looted. Anyone can skin a looted corpse, so other
+            -- people's kills count too unless you've turned them off.
+            local denied = C.Readable(UnitIsTapDenied(unit))
+            if P.db.onlyMine or (denied ~= false and not P.db.others) then return end
             c = Corpse(guid)
+            c.theirs = denied ~= false
         end
         c.seen = now()
         if c.state == "new" or c.state == "looted" or (c.state == "missed" and fresh) then

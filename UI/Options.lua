@@ -10,7 +10,7 @@ local UI = P.UI
 local Options = {}
 P.Options = Options
 
-local WIDTH, HEIGHT, COL = 640, 456, 288
+local WIDTH, HEIGHT, COL = 640, 490, 288
 local window
 local controls = {}
 
@@ -101,7 +101,11 @@ local function Build()
     left:Add(UI:Switch(window, "Remind me", "Show a card when a corpse you can skin is waiting.", get, set), 34)
     get, set = Setting("onlyMine")
     left:Add(UI:Switch(window, "Only corpses I looted",
-        "Leave out corpses your group looted and ones that dropped nothing.", get, set), 34)
+        "Leave out other people's kills, corpses your group looted and ones that dropped nothing.", get, set), 34)
+    get, set = Setting("others")
+    left:Add(UI:Switch(window, "Other people's kills",
+        "Remind you about skinnable corpses someone else killed when you point at or target them. Passing one up doesn't count as a miss.",
+        get, set), 34)
     get, set = Setting("lowSkill")
     left:Add(UI:Switch(window, "Remind when my skill is too low",
         "Also remind you about corpses you can't skin yet. The card shows the skill it needs.", get, set), 34)

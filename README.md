@@ -18,7 +18,8 @@ You kill a boar, loot it, and run off to the next one. Pelt notices the corpse t
 
 It stays quiet when it should:
 - In a fight, the card waits ("After the fight"), and time in combat doesn't count toward a miss.
-- Other people's kills, professions you don't have, and corpses your skill is too low for are skipped. You can turn on reminders for those.
+- Professions you don't have and corpses your skill is too low for are skipped. You can turn on reminders for low-skill corpses.
+- Someone else's kill you point at or target shows up as "Up for grabs". Passing one up doesn't count as a miss, and you can turn these off.
 
 ## Commands
 
@@ -34,7 +35,7 @@ The settings are also under Esc → Options → AddOns → Pelt, and in the addo
 
 ## Settings
 
-- **Reminders:** on or off, only corpses you looted, corpses your skill is too low for, and how long until a corpse counts as missed (15–120 seconds).
+- **Reminders:** on or off, only corpses you looted, other people's kills, corpses your skill is too low for, and how long until a corpse counts as missed (15–120 seconds).
 - **Professions:** pick which of Skinning, Herbalism, Mining and Engineering to remind you about.
 - **Alerts:** the walk-away nag, the big text, and a sound for each moment. Every sound has a play button, in the list and next to it. Pick from Pelt's own sounds, the game's, EllesmereUI's and any SharedMedia packs.
 - **Display:** the tooltip hint and the card size.
