@@ -10,7 +10,7 @@ You kill a boar, loot it, and run off to the next one. Pelt notices the corpse t
 
 - **Spots skinnable corpses.** When a corpse you killed turns skinnable, a card slides in: what it is, the skill it needs and yours. Pelt reads the corpse's tooltip and the cursor it shows, so the skinning knife is enough.
 - **Catches the ones that dropped nothing.** No loot sparkle, no right-click, easy to forget. Pelt picks them up once the fight ends.
-- **Nags when you walk off.** Move away without skinning and the card shakes, a sound plays and "Skin the Mottled Boar!" flashes on screen.
+- **Nags when you walk off.** Move away without skinning and the card shakes, a sound plays and "Skin the Mottled Boar!" flashes on screen. Walking up to a corpse doesn't count.
 - **Knows when you're on it.** Point at the corpse and the card lights up with "Right-click to skin". It fills up while you skin.
 - **Ticks it off.** Skin it and the card turns green, showing what you got, any skill-up and your streak.
 - **Counts the misses.** If a corpse sits too long, it counts as missed. Mouse over it again and it comes back.
@@ -21,7 +21,7 @@ You kill a boar, loot it, and run off to the next one. Pelt notices the corpse t
 It stays quiet when it should:
 - In a fight, the card waits ("After the fight"), and time in combat doesn't count toward a miss.
 - Professions you don't have and corpses your skill is too low for are skipped. You can turn on reminders for low-skill corpses.
-- Someone else's kill you point at or target shows up as "Up for grabs". Passing one up doesn't count as a miss, and you can turn these off.
+- Someone else's kill you point at or target shows up as "Up for grabs". It nags only if you stood at it and walked off, and passing one up doesn't count as a miss. Turn on "Only corpses I fought" to leave these out.
 
 ## Commands
 
@@ -32,21 +32,24 @@ It stays quiet when it should:
 | `/pelt move` | Drag the card somewhere else (again to lock) |
 | `/pelt stats` | What you've skinned and missed |
 | `/pelt check` | What Pelt can read off your target |
+| `/pelt log` | What Pelt saw and decided lately, to copy into a bug report |
 
 The settings are also under Esc → Options → AddOns → Pelt, and in the addon compartment on the minimap.
 
 ## Settings
 
-- **Reminders:** on or off, only corpses you looted, other people's kills, corpses your skill is too low for, and how long until a corpse counts as missed (15–120 seconds).
+- **Reminders:** on or off, only corpses you fought, corpses your skill is too low for, and how long until a corpse counts as missed (15–120 seconds).
 - **Professions:** pick which of Skinning, Herbalism, Mining and Engineering to remind you about.
 - **Alerts:** the walk-away nag, the big text, and a sound for each moment. Every sound has a play button, in the list and next to it. Pick from Pelt's own sounds, the game's, EllesmereUI's and any SharedMedia packs.
 - **Display:** the tooltip hint and the card size.
 
 ## WoW Forever notes
 
-Forever doesn't give addons the combat log, and in combat it hides other units' names and IDs. Pelt works from what's left: your loot windows, the corpse's tooltip and cursor, and your skinning casts. Anything it can't read in a fight, it reads the moment combat ends.
+Forever doesn't give addons the combat log, and in combat it hides other units' names and IDs. Pelt works from what's left: your loot windows, the corpse's tooltip and cursor, your target and your skinning casts. Anything it can't read in a fight, it reads the moment combat ends.
 
-If a corpse isn't picked up, target it and type `/pelt check`. It lists what Pelt can see.
+That also limits what "Only corpses I fought" can know. A corpse counts as yours when you looted it, when it was your target as the fight started, or when nobody else tagged it and you look at it within 15 seconds of the fight ending.
+
+If a corpse isn't picked up, target it and type `/pelt check`. It lists what Pelt can see. If Pelt gets one wrong, `/pelt log` shows what it saw and decided, ready to copy into a bug report.
 
 ## Install
 

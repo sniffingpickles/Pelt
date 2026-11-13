@@ -100,11 +100,8 @@ local function Build()
     local get, set = Setting("enabled")
     left:Add(UI:Switch(window, "Remind me", "Show a card when a corpse you can skin is waiting.", get, set), 34)
     get, set = Setting("onlyMine")
-    left:Add(UI:Switch(window, "Only corpses I looted",
-        "Leave out other people's kills, corpses your group looted and ones that dropped nothing.", get, set), 34)
-    get, set = Setting("others")
-    left:Add(UI:Switch(window, "Other people's kills",
-        "Remind you about skinnable corpses someone else killed when you point at or target them. Passing one up doesn't count as a miss.",
+    left:Add(UI:Switch(window, "Only corpses I fought",
+        "Leave out corpses you only pointed at, like other people's kills. When it's off, those show as \"Up for grabs\": they nag only if you stood at one and walked off, and passing one up isn't a miss.",
         get, set), 34)
     get, set = Setting("lowSkill")
     left:Add(UI:Switch(window, "Remind when my skill is too low",

@@ -2,21 +2,24 @@
     Pelt - corpse tracker
     Decides which corpses need skinning, when to nag and when one is done.
     Forever gives addons no combat log, so it all comes from loot windows,
-    the corpse's tooltip ("Skinnable") and your own casts.
+    the corpse's tooltip ("Skinnable"), your target and your own casts.
 ]]
 
 local _, P = ...
 local C, Profs = P.Compat, P.Profs
 
-local T = { corpses = {}, pending = {} }
+local T = { corpses = {}, pending = {}, fought = {}, skipped = {} }
 P.Tracker = T
 
 local TOKENS = { "target", "mouseover", "softinteract" }
 local POINTED = { "mouseover", "softinteract" }
 local CONFIRM_FOR = 4       -- seconds after looting to keep looking for the "Skinnable" line
 local TRUST_LEARNED = 0.8   -- then fall back on what this NPC was last time
-local CAST_WINDOW = 1       -- a loot window this soon after a gathering cast is its loot
-local WALK_AWAY = 1.25      -- seconds of moving before it counts as walking off
+local CAST_WINDOW = 1       -- a loot window this soon after a cast is its loot
+local FRESH_FIGHT = 15      -- a corpse you first see this soon after a fight came from it
+local WALK_AWAY = 1.25      -- seconds of moving off from a corpse you stood at
+local WANDER = 4            -- seconds of moving, not getting closer, from one you never reached
+local WANDER_NEARBY = 8     -- the same while it's within about 28 yards: no finer reading there
 local NAG_GRACE = 1.5       -- never nag in the first moments of a reminder
 local FORGET = 600          -- drop finished corpses from memory after this long
 
@@ -33,6 +36,15 @@ end
 
 local function Learn(npc, key)
     if npc and key then P.learned[npc] = key end
+end
+
+-- "Mottled Boar #0042": the name and the end of the GUID, for the log.
+local function Label(c)
+    return ("%s #%s"):format(c.name or ("NPC " .. tostring(c.npc)), c.guid:sub(-4))
+end
+
+local function ProfName(key)
+    return Profs.info[key] and Profs.info[key].name or tostring(key)
 end
 
 -- Fill in name and level from whichever unit token shows this corpse.
@@ -64,13 +76,60 @@ local function RemovePending(c)
 end
 
 -- The profession a corpse can be gathered with: its tooltip line first, then
--- the cursor it shows. false when neither shows one, nil when hidden.
+-- the cursor it shows. false when neither shows one, nil when hidden. The
+-- second value says which, for the log.
 local function GatherKey(unit)
     local key = C.UnitGatherLine(unit, Profs.match)
-    if key then return key end
+    if key then return key, "tooltip" end
     local cursor = C.UnitCursor(unit)
-    if cursor and cursor.prof then return cursor.prof end
+    if cursor and cursor.prof then return cursor.prof, "cursor " .. cursor.file end
     return key
+end
+
+---------------------------------------------------------------------------
+-- Fights: which corpses are yours
+---------------------------------------------------------------------------
+
+-- GUIDs are hidden in combat, so "yours" is what Pelt can know without
+-- them: corpses you looted, the target you opened the fight on, and
+-- corpses nobody else tagged that you look at right after a fight.
+
+local function Attackable(unit)
+    return C.Readable(UnitIsDead(unit)) == false and C.Readable(UnitCanAttack("player", unit)) == true
+end
+
+function T:OnTargetChanged()
+    if P.inCombat then return end
+    local guid = C.GUID("target")
+    self.pull = guid and C.NpcID(guid) and Attackable("target") and guid or nil
+    self:Scan("target", true)
+end
+
+function T:OnFightStart()
+    -- the target can still be readable as the fight starts
+    local guid = C.GUID("target")
+    if guid and C.NpcID(guid) and Attackable("target") then self.pull = guid end
+    if self.pull then
+        self.fought[self.pull] = now()
+        P:Log("Fight started on NPC %s #%s", tostring(C.NpcID(self.pull)), self.pull:sub(-4))
+    else
+        P:Log("Fight started")
+    end
+    self.pull = nil
+end
+
+function T:OnFightEnd()
+    self.fightOver = now()
+    P:Log("Fight over")
+end
+
+-- A corpse you didn't loot is yours when nobody else tagged it and you
+-- opened the fight on it, or you're looking at it right after a fight.
+function T:IsYours(unit, guid)
+    if C.Readable(UnitIsTapDenied(unit)) ~= false then return false end
+    if self.fought[guid] then return true, "you opened the fight on it" end
+    if self.fightOver and now() - self.fightOver <= FRESH_FIGHT then return true, "seen right after your fight" end
+    return false
 end
 
 ---------------------------------------------------------------------------
@@ -80,9 +139,11 @@ end
 -- The corpse can be gathered by `key`: remind, unless it doesn't apply.
 function T:Promote(c, key)
     c.prof = key
-    Describe(c)
+    local unit = Describe(c)
+    local via = c.via and (" (" .. c.via .. ")") or ""
     if not (P.db.enabled and P.db.profs[key] and Profs:Has(key)) then
         c.state = "ignored"
+        P:Log("%s: %s%s, but that profession is off or not learned", Label(c), ProfName(key), via)
         return
     end
     c.need = Profs.Required(c.level)
@@ -90,24 +151,30 @@ function T:Promote(c, key)
     c.low = (c.need and rank and rank < c.need) or false
     if c.low and not P.db.lowSkill then
         c.state = "low"
+        P:Log("%s: %s%s, needs %s, you have %s", Label(c), ProfName(key), via, tostring(c.need), tostring(rank))
         return
     end
     RemovePending(c)
     c.state = "pending"
     c.age, c.moved, c.nagged = 0, 0, false
+    local dist = unit and C.Distance(unit)
+    if dist == 1 then c.near = true end
+    c.closest = c.near and 1 or dist
     c.rankAt = rank
     table.insert(self.pending, 1, c)
+    P:Log("%s: %s%s, %s. Reminding.", Label(c), ProfName(key), via, c.theirs and "not yours" or "yours")
     P.Toast:Push(c)
     self:Wake()
 end
 
--- how: done | missed | gone | dismissed
-function T:Resolve(c, how, items)
+-- how: done | missed | gone | dismissed. `why` goes to the log.
+function T:Resolve(c, how, items, why)
     RemovePending(c)
     c.state = how
     c.resolvedAt = now()
     c.casting = nil
     if self.hover == c then self.hover, self.hoverUnit = nil, nil end
+    P:Log("%s: %s%s", Label(c), how, why and (" (" .. why .. ")") or "")
     if how == "done" then
         P:CountDone(items, c.countedMiss)
         c.countedMiss = nil
@@ -139,27 +206,35 @@ function T:Scan(unit, fresh)
     local guid = C.GUID(unit)
     local npc = C.NpcID(guid)
     if not npc then return end
-    local key = GatherKey(unit)
+    local key, via = GatherKey(unit)
     if key == nil then return end
     local c = self.corpses[guid]
     if key then
         Learn(npc, key)
         if not c then
             -- Not one you looted. Anyone can skin a looted corpse, so other
-            -- people's kills count too unless you've turned them off.
-            local denied = C.Readable(UnitIsTapDenied(unit))
-            if P.db.onlyMine or (denied ~= false and not P.db.others) then return end
+            -- people's kills count too unless you only want your own.
+            local yours, how = self:IsYours(unit, guid)
+            if P.db.onlyMine and not yours then
+                if not self.skipped[guid] then
+                    self.skipped[guid] = now()
+                    P:Log("Skipped %s #%s: not a corpse you fought", C.Readable(UnitName(unit)) or ("NPC " .. npc), guid:sub(-4))
+                end
+                return
+            end
             c = Corpse(guid)
-            c.theirs = denied ~= false
+            c.theirs = not yours
+            c.why = how
         end
         c.seen = now()
         if c.state == "new" or c.state == "looted" or (c.state == "missed" and fresh) then
+            c.via = via
             self:Promote(c, key)
         end
     elseif c and (c.state == "pending" or c.state == "low" or c.state == "missed") then
         -- the gather line is gone: you skinned it, or someone else did
         local yours = self.lastGather and now() - self.lastGather < 6
-        self:Resolve(c, yours and "done" or "gone")
+        self:Resolve(c, yours and "done" or "gone", nil, yours and "line gone after your cast" or "line gone")
     end
 end
 
@@ -192,98 +267,86 @@ function T:UpdateHover()
 end
 
 ---------------------------------------------------------------------------
--- Loot windows
+-- Casts
 ---------------------------------------------------------------------------
 
-local loot  -- the open window: { sources, total, cleared, gather }
-
-function T:OnLootReady()
-    if loot then return end  -- LOOT_READY and LOOT_OPENED both fire for one window
-    loot = { sources = {}, total = 0, cleared = 0 }
-    if IsFishingLoot and IsFishingLoot() then return end
-    loot.sources = C.LootSources()
-    loot.total = GetNumLootItems and GetNumLootItems() or 0
-    local castKey = self.lastCast and now() - self.lastCast <= CAST_WINDOW and self.lastCastKey
-    self.lastCast = nil
-    -- no source GUIDs to go on: credit the corpse you were skinning
-    if castKey and not next(loot.sources) then
-        local c = PendingInView()
-        if c then
-            loot.gather = true
-            Learn(c.npc, castKey)
-            self:Resolve(c, "done", C.LootItems())
-        end
-        return
-    end
-    for guid in pairs(loot.sources) do
-        local npc = C.NpcID(guid)
-        if npc then
-            local c = Corpse(guid)
-            -- Looting a corpse that's already skinnable, or a second window
-            -- from one you emptied, can only be the gathering loot.
-            local gathered = castKey or c.state == "pending" or c.state == "missed" or c.state == "low"
-                or (c.state == "looted" and c.full)
-            if gathered and c.state ~= "done" then
-                c.prof = c.prof or castKey or P.learned[npc] or "skinning"
-                if castKey then Learn(npc, castKey) end
-                Describe(c)
-                loot.gather = true
-                self:Resolve(c, "done", C.LootItems())
-            elseif c.state == "new" then
-                c.state = "looted"
-                c.lootedAt = now()
-                Describe(c)
-            end
-        end
-    end
+-- Your last cast with a cast bar. Gathering always has one; opening a
+-- corpse's loot never does, which is how the two loot windows differ.
+local function SameCast(k, castGUID, spellID)
+    if castGUID ~= nil and k.guid ~= nil then return castGUID == k.guid end
+    return spellID == k.id
 end
 
-function T:OnLootClosed()
-    local l = loot
-    loot = nil
-    if not l or l.gather then return end
-    local full = l.total == 0 or l.cleared >= l.total
-    for guid in pairs(l.sources) do
-        local c = self.corpses[guid]
-        if c and c.state == "looted" then
-            c.full = full
-            c.closedAt = now()
-        end
+-- What your last cast says about a loot window opening now: the profession
+-- for a gathering cast, true for another spell with a cast bar (Forever may
+-- use skinning spells Pelt doesn't know), nil for no cast. Using it up means
+-- one cast can't vouch for two windows.
+function T:CastBehindLoot()
+    local k = self.cast
+    if not k or k.used then return nil end
+    local t, fresh = now(), false
+    if k.doneAt then
+        fresh = t - k.doneAt <= CAST_WINDOW
+    else
+        -- the loot came in before the game said the cast finished
+        fresh = t >= k.at + k.dur - 0.5 and t <= k.at + k.dur + CAST_WINDOW
     end
-    self:Wake()
-    -- the corpse turns skinnable a moment after the window closes
-    C_Timer.After(0.15, function() T:ScanAll() end)
-    C_Timer.After(0.6, function() T:ScanAll() end)
+    if not fresh then return nil end
+    k.used = true
+    return k.key or true, k
 end
 
-function T:OnCast(spellID)
+-- Started a cast: if it's gathering, the card fills up with it.
+function T:OnCastStart(castGUID, spellID)
     spellID = C.Readable(spellID)
-    local key = spellID and Profs:FromCast(spellID)
+    if not spellID then return end
+    local key = Profs:FromCast(spellID) or false
+    self.cast = { id = spellID, guid = C.Readable(castGUID), key = key, at = now(), dur = C.CastDuration() or 2 }
+    if key or not P.inCombat then
+        P:Log("Cast started: %s (%d), %.1f s%s", C.SpellName(spellID) or "?", spellID, self.cast.dur,
+            key and "" or ", not a gathering spell Pelt knows")
+    end
+    if not key then return end
+    local c = self.hover or PendingInView()
+    if not c then return end
+    c.casting = { at = now(), dur = self.cast.dur }
+    c.moved = 0
+    c.rankAt = Profs:Rank(c.prof)
+    P.Toast:Refresh()
+end
+
+function T:OnCast(castGUID, spellID)
+    spellID = C.Readable(spellID)
+    if not spellID then return end
+    castGUID = C.Readable(castGUID)
+    local key = Profs:FromCast(spellID)
+    local k = self.cast
+    local matched = k and not k.doneAt and SameCast(k, castGUID, spellID)
+    if matched then
+        k.doneAt = now()
+    elseif key then
+        -- its start went unseen
+        self.cast = { id = spellID, guid = castGUID, key = key, at = now(), dur = 0, doneAt = now() }
+    end
+    if key or (matched and not P.inCombat) then
+        P:Log("Cast finished: %s (%d)", C.SpellName(spellID) or "?", spellID)
+    end
     if key then
-        self.lastCast = now()
-        self.lastGather = self.lastCast
-        self.lastCastKey = key
+        self.lastGather = now()
         for _, c in ipairs(self.pending) do
             if c.casting then c.casting.done = true end
         end
     end
 end
 
--- Started skinning: the card fills up with the cast.
-function T:OnCastStart(spellID)
+function T:OnCastFailed(castGUID, spellID)
     spellID = C.Readable(spellID)
-    local key = spellID and Profs:FromCast(spellID)
-    local c = key and (self.hover or PendingInView())
-    if not c then return end
-    c.casting = { at = now(), dur = C.CastDuration() or 2 }
-    c.moved = 0
-    c.rankAt = Profs:Rank(c.prof)
-    P.Toast:Refresh()
-end
-
-function T:OnCastFailed(spellID)
-    spellID = C.Readable(spellID)
-    if not (spellID and Profs:FromCast(spellID)) then return end
+    castGUID = C.Readable(castGUID)
+    local k = self.cast
+    -- a second click while casting fails on its own; the first cast carries on
+    if not (k and not k.doneAt and SameCast(k, castGUID, spellID)) then return end
+    self.cast = nil
+    if k.key then P:Log("Cast stopped: %s (%d)", C.SpellName(spellID) or "?", spellID) end
     for _, c in ipairs(self.pending) do
         if c.casting and not c.casting.done then c.casting = nil end
     end
@@ -309,6 +372,90 @@ function T:OnSkills()
 end
 
 ---------------------------------------------------------------------------
+-- Loot windows
+---------------------------------------------------------------------------
+
+local loot  -- the open window: { sources, total, cleared, gather }
+
+local function CastText(cast, k)
+    if not cast then return "no cast before it" end
+    return ("after %s (%d)%s"):format(C.SpellName(k.id) or "?", k.id, cast == true and ", not a gathering spell Pelt knows" or "")
+end
+
+function T:OnLootReady()
+    if loot then return end  -- LOOT_READY and LOOT_OPENED both fire for one window
+    loot = { sources = {}, total = 0, cleared = 0 }
+    if IsFishingLoot and IsFishingLoot() then
+        P:Log("Loot opened: fishing")
+        return
+    end
+    loot.sources = C.LootSources()
+    loot.total = GetNumLootItems and GetNumLootItems() or 0
+    local cast, k = self:CastBehindLoot()
+    local castKey = type(cast) == "string" and cast or nil
+    local n = 0
+    for _ in pairs(loot.sources) do n = n + 1 end
+    P:Log("Loot opened: %d slot%s from %d source%s, %s", loot.total, loot.total == 1 and "" or "s",
+        n, n == 1 and "" or "s", CastText(cast, k))
+    -- no source GUIDs to go on: credit the corpse you were skinning
+    if castKey and n == 0 then
+        local c = PendingInView()
+        if c then
+            loot.gather = true
+            Learn(c.npc, castKey)
+            self:Resolve(c, "done", C.LootItems(), "gathering cast, no loot source")
+        end
+        return
+    end
+    for guid in pairs(loot.sources) do
+        local npc = C.NpcID(guid)
+        if npc then
+            local c = Corpse(guid)
+            local was = c.state
+            Describe(c)
+            -- you can loot it, so you (or your group) fought it, and you're in reach
+            c.theirs, c.why, c.near = nil, "you looted it", true
+            if c.moved then c.moved = 0 end
+            -- Gathering loot always follows a cast. Without one this is the
+            -- corpse's own loot, even when it already shows as skinnable.
+            local skinnable = was == "pending" or was == "missed" or was == "low" or (was == "looted" and c.full)
+            if (castKey or (cast and skinnable)) and was ~= "done" then
+                c.prof = c.prof or castKey or P.learned[npc] or "skinning"
+                if castKey then Learn(npc, castKey) end
+                loot.gather = true
+                self:Resolve(c, "done", C.LootItems(), castKey and "gathering loot" or "loot after a cast")
+            elseif was == "new" then
+                c.state = "looted"
+                c.lootedAt = now()
+                P:Log("  %s: looted", Label(c))
+            else
+                P:Log("  %s: looted again, still %s", Label(c), was)
+            end
+        end
+    end
+end
+
+function T:OnLootClosed()
+    local l = loot
+    loot = nil
+    if not l then return end
+    if not l.gather and l.total > 0 then P:Log("Loot closed: took %d of %d", l.cleared, l.total) end
+    if l.gather then return end
+    local full = l.total == 0 or l.cleared >= l.total
+    for guid in pairs(l.sources) do
+        local c = self.corpses[guid]
+        if c and c.state == "looted" then
+            c.full = full
+            c.closedAt = now()
+        end
+    end
+    self:Wake()
+    -- the corpse turns skinnable a moment after the window closes
+    C_Timer.After(0.15, function() T:ScanAll() end)
+    C_Timer.After(0.6, function() T:ScanAll() end)
+end
+
+---------------------------------------------------------------------------
 -- Ticking: confirm, age, nag, expire
 ---------------------------------------------------------------------------
 
@@ -320,15 +467,48 @@ function T:Wake()
     ticker:Show()
 end
 
+-- Are you walking away from the corpse on the card? How far it is shows
+-- while it's your target or under the mouse; otherwise it's how long you've
+-- been moving. Walking up to a corpse isn't walking away from it.
+function T:Watch(c, dt)
+    local unit = (self.hover == c and self.hoverUnit) or (C.GUID("target") == c.guid and "target") or nil
+    local dist = unit and C.Distance(unit)
+    if c.casting or dist == 1 then
+        c.near, c.closest, c.moved = true, 1, 0
+    elseif dist and dist < (c.closest or 4) then
+        c.closest, c.moved = dist, 0
+    elseif dist == nil and unit and self.hover == c then
+        -- pointing at it, and the game won't say how far
+        c.moved = 0
+    elseif C.IsMoving() then
+        c.moved = c.moved + dt
+    end
+    if c.age < NAG_GRACE then return end
+    -- someone else's corpse only nags once you've stood at it
+    if c.theirs and not c.near then return end
+    local why
+    if dist and c.closest and dist > c.closest then
+        why = c.closest == 1 and "out of reach" or "moved further off"
+    elseif c.moved >= (c.near and WALK_AWAY or dist == 2 and WANDER_NEARBY or WANDER) then
+        why = ("moving %.1f s"):format(c.moved)
+    end
+    if why then
+        c.nagged = true
+        P:Log("Nag: %s, %s", Label(c), why)
+        P.Toast:Nag(c)
+    end
+end
+
 function T:OnUpdate(dt)
     local t = now()
     local busy = false
 
-    for guid, c in pairs(self.corpses) do
+    for _, c in pairs(self.corpses) do
         if c.state == "looted" and c.closedAt and t - c.closedAt < CONFIRM_FOR then
             busy = true
             local learned = P.learned[c.npc]
             if c.full and learned and t - c.closedAt >= TRUST_LEARNED then
+                c.via = "learned"
                 self:Promote(c, learned)
             end
         end
@@ -353,21 +533,7 @@ function T:OnUpdate(dt)
             if c.age >= P.db.remindFor then self:Resolve(c, "missed") end
         end
         local top = self.pending[1]
-        if top and P.db.nag and not top.nagged then
-            local onTarget = C.GUID("target") == top.guid
-            local near = onTarget and C.InReach("target")
-            -- pointing at it from across the field is still walking away
-            local onIt = top.casting or (self.hover == top and C.InReach(self.hoverUnit) ~= false)
-            if near or onIt then
-                top.moved = 0
-            elseif C.IsMoving() then
-                top.moved = top.moved + dt
-            end
-            if not onIt and top.age >= NAG_GRACE and (top.moved >= WALK_AWAY or (onTarget and near == false)) then
-                top.nagged = true
-                P.Toast:Nag(top)
-            end
-        end
+        if top and P.db.nag and not top.nagged then self:Watch(top, dt) end
     end
 
     purgeIn = purgeIn - dt
@@ -376,6 +542,11 @@ function T:OnUpdate(dt)
         for guid, c in pairs(self.corpses) do
             if t - (c.resolvedAt or c.seen or c.lootedAt or c.born) > FORGET and c.state ~= "pending" then
                 self.corpses[guid] = nil
+            end
+        end
+        for _, list in ipairs({ self.fought, self.skipped }) do
+            for guid, at in pairs(list) do
+                if t - at > FORGET then list[guid] = nil end
             end
         end
     end
@@ -407,30 +578,32 @@ P:Listen("READY", function()
     -- the mouse moved onto or off something in the world
     P:On("WORLD_CURSOR_TOOLTIP_UPDATE", function() Pointed("mouseover") end)
     P:On("PLAYER_SOFT_INTERACT_CHANGED", function() Pointed("softinteract") end)
-    P:On("PLAYER_TARGET_CHANGED", function() T:Scan("target", true) end)
+    P:On("PLAYER_TARGET_CHANGED", function() T:OnTargetChanged() end)
     -- fires when the corpse's skinnable flag lands
     P:On("UNIT_FLAGS", function(unit)
         if unit == "target" or unit == "mouseover" then T:Scan(unit) end
     end)
 
-    P:On("UNIT_SPELLCAST_START", function(unit, _, spellID)
-        if unit == "player" then T:OnCastStart(spellID) end
+    P:On("UNIT_SPELLCAST_START", function(unit, castGUID, spellID)
+        if unit == "player" then T:OnCastStart(castGUID, spellID) end
     end)
-    P:On("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
-        if unit == "player" then T:OnCast(spellID) end
+    P:On("UNIT_SPELLCAST_SUCCEEDED", function(unit, castGUID, spellID)
+        if unit == "player" then T:OnCast(castGUID, spellID) end
     end)
     for _, event in ipairs({ "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED" }) do
-        P:On(event, function(unit, _, spellID)
-            if unit == "player" then T:OnCastFailed(spellID) end
+        P:On(event, function(unit, castGUID, spellID)
+            if unit == "player" then T:OnCastFailed(castGUID, spellID) end
         end)
     end
 
     P:On("PLAYER_REGEN_DISABLED", function()
+        T:OnFightStart()
         P.inCombat = true
         P.Toast:Refresh()
     end)
     P:On("PLAYER_REGEN_ENABLED", function()
         P.inCombat = false
+        T:OnFightEnd()
         P.Toast:Refresh()
         -- your target is often the corpse of the last thing you killed
         C_Timer.After(0.3, function() T:ScanAll() end)
@@ -439,13 +612,14 @@ P:Listen("READY", function()
 
     -- corpses don't follow you through a loading screen
     P:On("PLAYER_ENTERING_WORLD", function()
-        for i = #T.pending, 1, -1 do T:Resolve(T.pending[i], "gone") end
+        for i = #T.pending, 1, -1 do T:Resolve(T.pending[i], "gone", nil, "loading screen") end
     end)
 end)
 
 P:Listen("SETTINGS", function()
-    if not P.db.enabled then
-        for i = #T.pending, 1, -1 do T:Resolve(T.pending[i], "dismissed") end
+    for i = #T.pending, 1, -1 do
+        local c = T.pending[i]
+        if not P.db.enabled or (P.db.onlyMine and c.theirs) then T:Resolve(c, "dismissed", nil, "settings") end
     end
 end)
 
@@ -471,6 +645,8 @@ local STATE_TEXT = {
     low = "your skill is too low (turn on the low-skill reminder to see it)",
     ignored = "that profession is off, or you don't have it",
 }
+
+local DISTANCE_TEXT = { "in reach", "within about 28 yards", "further than 28 yards" }
 
 function T:Diagnose()
     local unit
@@ -502,10 +678,17 @@ function T:Diagnose()
     end
     P:Print("  Cursor: " .. shows)
     P:Print("  Someone else's kill: " .. YesNo(C.Readable(UnitIsTapDenied(unit))))
-    P:Print("  In reach: " .. YesNo(C.InReach(unit)))
+    P:Print("  Distance: " .. (DISTANCE_TEXT[C.Distance(unit) or 0] or "can't tell"))
 
     local guid = C.GUID(unit)
     local c = guid and self.corpses[guid]
+    local yours, why
+    if c then
+        yours, why = not c.theirs, c.why
+    elseif guid then
+        yours, why = self:IsYours(unit, guid)
+    end
+    P:Print("  Your fight: " .. (guid and (yours and ("yes" .. (why and (", " .. why) or "")) or "no") or "can't tell"))
     local learned = P.learned[C.NpcID(guid) or false]
     P:Print("  Pelt: " .. (c and STATE_TEXT[c.state] or "not tracking it")
         .. (learned and ("  ·  learned as " .. Profs.info[learned].name) or ""))

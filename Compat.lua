@@ -77,6 +77,19 @@ function C.InReach(unit)
     if ok then return C.Readable(res) end
 end
 
+-- How far off a unit is: 1 within skinning reach (about 10 yards), 2 within
+-- about 28, 3 farther. 2 also when the client only says "out of reach".
+-- nil when it won't say at all.
+function C.Distance(unit)
+    local near = C.InReach(unit)
+    if near == nil then return nil end
+    if near then return 1 end
+    local ok, close = pcall(CheckInteractDistance, unit, 4)
+    close = ok and C.Readable(close)
+    if close == false then return 3 end
+    return 2
+end
+
 function C.IsMoving()
     local speed = C.Readable(GetUnitSpeed("player"))
     return speed ~= nil and speed > 0

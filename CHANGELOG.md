@@ -1,16 +1,9 @@
-# Pelt 1.1.0
+# Pelt 1.2.0
 
-First release on CurseForge.
-
-- A reminder card for corpses you can skin, with the skill each one needs and yours. Pelt reads the corpse's tooltip and the cursor it shows.
-- Catches corpses that dropped no loot, once the fight ends.
-- Other people's kills you point at or target show up as "Up for grabs". Passing one up doesn't count as a miss.
-- Shakes, plays a sound and shows big text when you walk away without skinning.
-- Lights up when you point at the corpse, and fills up while you skin.
-- Ticks the corpse off when you skin it, with what you got, any skill-up and your streak.
-- Counts missed corpses. Mouse over a missed one and it comes back.
-- Learns which creatures are skinnable as you play.
-- Adds the skill a corpse needs, and yours, to its tooltip.
-- Works for Herbalism, Mining and Engineering corpses too.
-- Six sounds made for Pelt, 28 from the game, plus EllesmereUI's and SharedMedia's, each with a play button.
-- `/pelt` settings, `/pelt test` preview, `/pelt move` to place the card, `/pelt stats`, and `/pelt check` to see what Pelt reads off your target.
+- New setting: **Only corpses I fought.** Leaves out corpses you only pointed at, like other people's kills. Your kills that dropped nothing still count. It replaces "Only corpses I looted" and "Other people's kills". It's on for new installs. If you had "Other people's kills" turned off, it starts on for you too.
+- Walking up to a corpse no longer counts as walking away from it. Pelt nags when you get further from a corpse, or walk a while without getting closer. A corpse you spot from a distance no longer nags the moment you target it.
+- Other people's kills ("Up for grabs") nag only if you stood at one and then walked off.
+- Fixed: looting a corpse could tick it off as skinned. Pelt now counts a loot window as skinning only right after a cast.
+- New `/pelt log`: what Pelt saw and decided lately, in a window you can copy from. Paste it into a comment if Pelt gets a corpse wrong.
+- `/pelt check` now says whether the corpse counts as yours, and roughly how far off it is.
+- New installs get "GM message" as the walk-away sound.

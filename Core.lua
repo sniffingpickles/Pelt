@@ -7,7 +7,7 @@
 local ADDON, P = ...
 
 local GetMeta = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
-P.version = GetMeta and GetMeta(ADDON, "Version") or "1.1.0"
+P.version = GetMeta and GetMeta(ADDON, "Version") or "1.2.0"
 
 local build = select(4, GetBuildInfo())
 P.IS_FOREVER = (build >= 16000 and build < 20000)
@@ -16,14 +16,13 @@ P.IS_FOREVER = (build >= 16000 and build < 20000)
 P.defaults = {
     enabled = true,
     profs = { skinning = true, herbalism = true, mining = true, engineering = true },
-    onlyMine = false,       -- only corpses you looted yourself
-    others = true,          -- other people's skinnable kills you point at or target
+    onlyMine = true,        -- only corpses you fought; off also shows other people's as "Up for grabs"
     lowSkill = false,       -- also remind when your skill is too low to skin it
     remindFor = 60,         -- seconds out of combat before a corpse counts as missed
     nag = true,             -- shake, sound and big text when you walk away
     bigText = true,
     sound = "ping",         -- keys from P:SoundList() (Sounds.lua)
-    nagSound = "warning",
+    nagSound = "gm",
     doneSound = "coins",
     tooltip = true,         -- skill needed vs yours on corpse tooltips
     scale = 1,
@@ -94,7 +93,12 @@ local function InitDB()
     PeltDB = type(PeltDB) == "table" and PeltDB or {}
     local db = PeltDB
     db.profile = type(db.profile) == "table" and db.profile or {}
+    -- 1.1 had a separate "Other people's kills" switch; turning it off meant
+    -- what "Only corpses I fought" does now
+    if db.profile.others == false then db.profile.onlyMine = true end
+    db.profile.others = nil
     CopyDefaults(P.defaults, db.profile)
+    db.log = type(db.log) == "table" and db.log or {}
     -- NPC ID -> profession, learned from corpse tooltips. Lets Pelt remind
     -- you even when it never gets a look at the corpse after looting it.
     db.learned = type(db.learned) == "table" and db.learned or {}
@@ -104,6 +108,7 @@ local function InitDB()
     CopyDefaults(NewStats(), db.chars[key])
 
     P.db = db.profile
+    P.log = db.log
     P.learned = db.learned
     P.stats = db.chars[key]
     P.session = NewStats()
@@ -156,6 +161,28 @@ function P:CountSkillUp(n)
 end
 
 ---------------------------------------------------------------------------
+-- Log: what the tracker saw and decided, for bug reports (/pelt log)
+---------------------------------------------------------------------------
+
+local LOG_LINES = 200
+
+function P:Log(fmt, ...)
+    local log = self.log
+    if not log then return end
+    local ok, text = pcall(string.format, fmt, ...)
+    if not ok then text = fmt end
+    log[#log + 1] = ("%s %s"):format(date("%H:%M:%S"), text)
+    while #log > LOG_LINES do table.remove(log, 1) end
+    self:Send("LOG")
+end
+
+function P:ClearLog()
+    if not self.log then return end
+    for i = #self.log, 1, -1 do self.log[i] = nil end
+    self:Send("LOG")
+end
+
+---------------------------------------------------------------------------
 -- Chat and slash commands
 ---------------------------------------------------------------------------
 
@@ -177,6 +204,7 @@ local HELP = {
     "/pelt move - move the reminder (again to lock)",
     "/pelt stats - what you've skinned and missed",
     "/pelt check - what Pelt can see on your target",
+    "/pelt log - what Pelt saw and decided lately, to copy into a bug report",
 }
 
 SLASH_PELT1 = "/pelt"
@@ -190,6 +218,11 @@ SlashCmdList.PELT = function(msg)
         P:PrintStats()
     elseif msg == "check" then
         P.Tracker:Diagnose()
+    elseif msg == "log" then
+        P.LogWindow:Toggle()
+    elseif msg == "log clear" then
+        P:ClearLog()
+        P:Print("Log cleared.")
     elseif msg == "help" or msg == "?" then
         for _, line in ipairs(HELP) do P:Print(line) end
     else
